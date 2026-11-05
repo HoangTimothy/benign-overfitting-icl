@@ -1,6 +1,7 @@
 """Scientific invariants and real train/save/resume/eval integration."""
 
 import copy
+from unittest.mock import patch
 from pathlib import Path
 
 import pytest
@@ -20,9 +21,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def config(name):
-    return QuinineArgumentParser(schema=schema).parse_quinfig(
-        ["--config", str(ROOT / "src" / "conf" / name)]
-    )
+    with patch("sys.argv", ["train.py", "--config", str(ROOT / "src" / "conf" / name)]):
+        return QuinineArgumentParser(schema=schema).parse_quinfig()
 
 
 @pytest.mark.parametrize("path", sorted((ROOT / "src" / "conf").glob("*.yaml")))
@@ -50,6 +50,8 @@ def test_causal_interleaving_and_gradient():
 
 
 def test_checkpoint_and_resume(tmp_path):
+    import wandb
+    run = wandb.init(mode="disabled")
     args = config("smoke.yaml")
     args.out_dir = str(tmp_path)
     model = TransformerModel(**{
@@ -68,6 +70,7 @@ def test_checkpoint_and_resume(tmp_path):
     metric = eval_batch(loaded.eval(), get_task_sampler("linear_regression", 5, 2), xs)
     assert metric.shape == (2, 5)
     assert torch.isfinite(metric).all()
+    run.finish()
 
 
 @pytest.mark.parametrize("task", ["linear_regression", "sparse_linear_regression", "linear_classification", "relu_2nn_regression", "decision_tree"])

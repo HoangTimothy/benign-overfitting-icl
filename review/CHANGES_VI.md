@@ -41,3 +41,13 @@ Không sửa các lỗi upstream khác ngoài phần đã liệt kê. Đặc bi�
 - https://docs.pytorch.org/docs/stable/notes/serialization.html
 - https://huggingface.co/docs/transformers/model_doc/gpt2
 - https://docs.astral.sh/uv/concepts/projects/sync/
+
+## Kết quả kiểm tra cục bộ
+
+- Windows, Python 3.12.10, PyTorch 2.15.0+cpu, Transformers 5.22.1.
+- `uv sync --locked`: cài thành công môi trường riêng `.venv`.
+- `uv run --locked pytest -q` từ root: **17 passed**, 15.43 giây ở lượt cuối.
+- `uv run --locked python train.py --config conf/smoke.yaml` từ `src`: hoàn thành 3 bước; checkpoint được tạo.
+- `git diff --check`: pass.
+- Các tệp khoa học được liệt kê là giữ nguyên đã được đối chiếu bằng Git với baseline.
+- Chưa kiểm tra GPU, convergence dài hạn, notebook từ đầu đến cuối hay checkpoint chính thức 2022. Trạng thái CI xem trực tiếp trên PR.
