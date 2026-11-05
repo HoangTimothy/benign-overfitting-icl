@@ -58,6 +58,7 @@ training_schema = {
 }
 
 wandb_schema = {
+    "mode": merge(tstring, allowed(["disabled", "offline", "online"]), default("disabled")),
     "project": merge(tstring, default("in-context-training")),
     "entity": merge(tstring, default("in-context")),
     "notes": merge(tstring, default("")),
@@ -66,6 +67,8 @@ wandb_schema = {
 }
 
 schema = {
+    "device": merge(tstring, allowed(["auto", "cpu", "cuda"]), default("auto")),
+    "eval_after_train": merge(tboolean, default(True)),
     "out_dir": merge(tstring, required),
     "model": stdict(model_schema),
     "training": stdict(training_schema),

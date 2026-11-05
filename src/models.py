@@ -9,6 +9,7 @@ from sklearn import tree
 import xgboost as xgb
 
 from base_models import NeuralNetwork, ParallelNetworks
+from runtime import resolve_device
 
 
 def build_model(conf):
@@ -89,6 +90,7 @@ class TransformerModel(nn.Module):
             embd_pdrop=0.0,
             attn_pdrop=0.0,
             use_cache=False,
+            attn_implementation="eager",  # preserve the original attention algorithm
         )
         self.name = f"gpt2_embd={n_embd}_layer={n_layer}_head={n_head}"
 
@@ -322,7 +324,8 @@ class GDModel:
         # prediction made at all indices by default.
         # xs: bsize X npoints X ndim.
         # ys: bsize X npoints.
-        xs, ys = xs.cuda(), ys.cuda()
+        device = resolve_device()
+        xs, ys = xs.to(device), ys.to(device)
 
         if inds is None:
             inds = range(ys.shape[1])
@@ -338,7 +341,7 @@ class GDModel:
             model = ParallelNetworks(
                 ys.shape[0], self.model_class, **self.model_class_args
             )
-            model.cuda()
+            model.to(device)
             if i > 0:
                 pred = torch.zeros_like(ys[:, 0])
 

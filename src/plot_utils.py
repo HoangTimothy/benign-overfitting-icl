@@ -6,7 +6,7 @@ import seaborn as sns
 from eval import get_run_metrics, baseline_names, get_model_from_run
 from models import build_model
 
-sns.set_theme("notebook", "darkgrid")
+sns.set_theme(context="notebook", style="darkgrid")
 palette = sns.color_palette("colorblind")
 
 
