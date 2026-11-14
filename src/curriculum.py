@@ -20,6 +20,18 @@ class Curriculum:
         )
         self.n_points = self.update_var(self.n_points, self.n_points_schedule)
 
+    def state_dict(self):
+        return {
+            "step_count": self.step_count,
+            "n_dims_truncated": self.n_dims_truncated,
+            "n_points": self.n_points,
+        }
+
+    def load_state_dict(self, state):
+        self.step_count = state["step_count"]
+        self.n_dims_truncated = state["n_dims_truncated"]
+        self.n_points = state["n_points"]
+
     def update_var(self, var, schedule):
         if self.step_count % schedule.interval == 0:
             var += schedule.inc

@@ -7,3 +7,4 @@ models
 *.egg-info/
 wandb/
 review/generated/
+*.md

@@ -24,7 +24,7 @@ def build_model(conf):
     else:
         raise NotImplementedError
 
-    return model
+    return model.to(resolve_device())
 
 
 def get_relevant_baselines(task_name):
@@ -90,7 +90,7 @@ class TransformerModel(nn.Module):
             embd_pdrop=0.0,
             attn_pdrop=0.0,
             use_cache=False,
-            attn_implementation="eager",  # preserve the original attention algorithm
+            attn_implementation="sdpa",
         )
         self.name = f"gpt2_embd={n_embd}_layer={n_layer}_head={n_head}"
 
@@ -116,10 +116,12 @@ class TransformerModel(nn.Module):
         return zs
 
     def forward(self, xs, ys, inds=None):
+        if xs.device.type != "cuda" or ys.device.type != "cuda":
+            raise ValueError("Transformer inputs must be on a CUDA GPU")
         if inds is None:
-            inds = torch.arange(ys.shape[1])
+            inds = torch.arange(ys.shape[1], device=ys.device)
         else:
-            inds = torch.tensor(inds)
+            inds = torch.as_tensor(inds, device=ys.device)
             if max(inds) >= ys.shape[1] or min(inds) < 0:
                 raise ValueError("inds contain indices where xs and ys are not defined")
         zs = self._combine(xs, ys)

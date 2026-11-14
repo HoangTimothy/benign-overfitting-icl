@@ -1,7 +1,15 @@
 name: Compatibility
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      gpu:
+        description: Run CUDA acceptance tests on an available self-hosted GPU runner
+        type: boolean
+        default: false
 jobs:
-  cpu:
+  unit:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
@@ -12,4 +20,16 @@ jobs:
         with:
           version: "0.11.31"
       - run: uv sync --locked
-      - run: uv run --locked pytest -q
+      - run: uv run --locked pytest -m "not cuda" -q
+  gpu:
+    if: github.event_name == 'workflow_dispatch' && inputs.gpu
+    runs-on: [self-hosted, linux, x64, gpu]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.31"
+      - run: uv sync --locked
+      - run: uv run --locked pytest --require-cuda -q
+      - run: uv run --locked python train.py --config conf/smoke.yaml
+        working-directory: src

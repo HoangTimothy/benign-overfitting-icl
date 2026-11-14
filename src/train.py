@@ -3,6 +3,7 @@ from random import randint
 import uuid
 
 from quinine import QuinineArgumentParser
+from munch import unmunchify
 from tqdm import tqdm
 import torch
 import yaml
@@ -13,15 +14,18 @@ from samplers import get_data_sampler
 from curriculum import Curriculum
 from schema import schema
 from models import build_model
-from runtime import resolve_device
+from runtime import (
+    resolve_device, configure_reproducibility, configure_backend, capture_rng_state,
+    restore_rng_state, runtime_signature,
+)
 
 import wandb
 
-torch.backends.cudnn.benchmark = True
-
 
 def train_step(model, xs, ys, optimizer, loss_func):
-    optimizer.zero_grad()
+    if next(model.parameters()).device.type != "cuda" or xs.device.type != "cuda" or ys.device.type != "cuda":
+        raise ValueError("Training requires model and inputs on CUDA")
+    optimizer.zero_grad(set_to_none=False)
     output = model(xs, ys)
     loss = loss_func(output, ys)
     loss.backward()
@@ -38,18 +42,50 @@ def sample_seeds(total_seeds, count):
 
 def train(model, args):
     device = next(model.parameters()).device
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.training.learning_rate)
+    resolve_device(device)
+    configure_backend(args.deterministic)
+    if any(parameter.dtype != torch.float32 for parameter in model.parameters()):
+        raise ValueError("Training equivalence requires FP32 model parameters")
+    optimizer = torch.optim.Adam(
+        model.parameters(), lr=args.training.learning_rate, betas=(0.9, 0.999),
+        eps=1e-8, weight_decay=0, amsgrad=False, foreach=False, fused=False,
+    )
     curriculum = Curriculum(args.training.curriculum)
+    model.train()
+
+    # Only run length, output paths and checkpoint/logging intervals may change.
+    signature = {
+        "model": unmunchify(args.model),
+        "seed": args.seed,
+        "deterministic": args.deterministic,
+        "device": str(device),
+        "training": {
+            key: value for key, value in unmunchify(args.training).items()
+            if key not in {"train_steps", "save_every_steps", "keep_every_steps", "resume_id"}
+        },
+    }
 
     starting_step = 0
+    state = None
     state_path = os.path.join(args.out_dir, "state.pt")
     if os.path.exists(state_path):
-        state = torch.load(state_path, map_location=device, weights_only=True)
+        # RNG byte tensors must remain on CPU; optimizer.load_state_dict moves
+        # optimizer tensors to the parameter device.
+        state = torch.load(state_path, map_location="cpu", weights_only=True)
+        if state.get("checkpoint_version") != 2:
+            raise ValueError("Legacy checkpoint lacks RNG/task-pool state; exact resume is unavailable")
+        if state["training_signature"] != signature:
+            raise ValueError("Training configuration changed; exact resume would not be equivalent")
+        if state["runtime_signature"] != runtime_signature():
+            raise ValueError("Execution stack changed; exact resume requires the same CUDA/runtime configuration")
         model.load_state_dict(state["model_state_dict"])
         optimizer.load_state_dict(state["optimizer_state_dict"])
         starting_step = state["train_step"] + 1
-        for i in range(state["train_step"] + 1):
-            curriculum.update()
+        if args.training.train_steps < starting_step:
+            raise ValueError("Requested training length precedes the checkpoint")
+        curriculum.load_state_dict(state["curriculum_state"])
+        if curriculum.step_count != starting_step:
+            raise ValueError("Checkpoint curriculum and training step disagree")
 
     n_dims = model.n_dims
     bsize = args.training.batch_size
@@ -58,9 +94,14 @@ def train(model, args):
         args.training.task,
         n_dims,
         bsize,
-        num_tasks=args.training.num_tasks,
+        pool_dict=state["task_pool_dict"] if state is not None else None,
+        num_tasks=args.training.num_tasks if state is None else None,
         **args.training.task_kwargs,
     )
+    # Restore only after constructors and all one-time initialization. In
+    # particular, never regenerate a finite task pool after restoring RNG.
+    if state is not None:
+        restore_rng_state(state["rng_state"])
     pbar = tqdm(range(starting_step, args.training.train_steps))
 
     num_training_examples = args.training.num_training_examples
@@ -119,13 +160,21 @@ def train(model, args):
         curriculum.update()
 
         pbar.set_description(f"loss {loss}")
-        if i % args.training.save_every_steps == 0 and not args.test_run:
+        if (i % args.training.save_every_steps == 0 or i == args.training.train_steps - 1) and not args.test_run:
             training_state = {
+                "checkpoint_version": 2,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
                 "train_step": i,
+                "curriculum_state": curriculum.state_dict(),
+                "task_pool_dict": task_sampler.pool_dict,
+                "rng_state": capture_rng_state(),
+                "training_signature": signature,
+                "runtime_signature": runtime_signature(),
             }
-            torch.save(training_state, state_path)
+            temporary_path = state_path + ".tmp"
+            torch.save(training_state, temporary_path)
+            os.replace(temporary_path, state_path)
 
         if (
             args.training.keep_every_steps > 0
@@ -137,6 +186,8 @@ def train(model, args):
 
 
 def main(args):
+    device = resolve_device(args.device)
+    configure_reproducibility(args.seed, args.deterministic)
     if args.test_run:
         curriculum_args = args.training.curriculum
         curriculum_args.points.start = curriculum_args.points.end
@@ -155,7 +206,7 @@ def main(args):
         )
 
     model = build_model(args.model)
-    model.to(resolve_device(args.device))
+    model.to(device)
     model.train()
 
     train(model, args)

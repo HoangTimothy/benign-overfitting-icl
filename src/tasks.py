@@ -67,7 +67,9 @@ def get_task_sampler(
             if pool_dict is not None:
                 raise ValueError("Either pool_dict or num_tasks should be None.")
             pool_dict = task_cls.generate_pool_dict(n_dims, num_tasks, **kwargs)
-        return lambda **args: task_cls(n_dims, batch_size, pool_dict, **args, **kwargs)
+        sampler = lambda **args: task_cls(n_dims, batch_size, pool_dict, **args, **kwargs)
+        sampler.pool_dict = pool_dict  # preserve finite task pools across resume
+        return sampler
     else:
         print("Unknown task")
         raise NotImplementedError

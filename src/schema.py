@@ -67,7 +67,9 @@ wandb_schema = {
 }
 
 schema = {
-    "device": merge(tstring, allowed(["auto", "cpu", "cuda"]), default("auto")),
+    "device": merge(tstring, allowed(["cuda"]), default("cuda")),
+    "seed": merge(tinteger, default(0)),
+    "deterministic": merge(tboolean, default(True)),
     "eval_after_train": merge(tboolean, default(True)),
     "out_dir": merge(tstring, required),
     "model": stdict(model_schema),
