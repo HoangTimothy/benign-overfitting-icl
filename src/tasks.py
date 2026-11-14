@@ -1,6 +1,7 @@
 import math
 
 import torch
+from phase2 import Phase2Classification
 
 
 def squared_error(ys_pred, ys):
@@ -53,6 +54,7 @@ def get_task_sampler(
     task_name, n_dims, batch_size, pool_dict=None, num_tasks=None, **kwargs
 ):
     task_names_to_classes = {
+        "phase2_classification": Phase2Classification,
         "linear_regression": LinearRegression,
         "sparse_linear_regression": SparseLinearRegression,
         "linear_classification": LinearClassification,
@@ -67,7 +69,9 @@ def get_task_sampler(
             if pool_dict is not None:
                 raise ValueError("Either pool_dict or num_tasks should be None.")
             pool_dict = task_cls.generate_pool_dict(n_dims, num_tasks, **kwargs)
-        return lambda **args: task_cls(n_dims, batch_size, pool_dict, **args, **kwargs)
+        sampler = lambda **args: task_cls(n_dims, batch_size, pool_dict, **args, **kwargs)
+        sampler.pool_dict = pool_dict  # preserve finite task pools across resume
+        return sampler
     else:
         print("Unknown task")
         raise NotImplementedError

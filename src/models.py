@@ -9,6 +9,7 @@ from sklearn import tree
 import xgboost as xgb
 
 from base_models import NeuralNetwork, ParallelNetworks
+from runtime import resolve_device
 
 
 def build_model(conf):
@@ -23,7 +24,7 @@ def build_model(conf):
     else:
         raise NotImplementedError
 
-    return model
+    return model.to(resolve_device())
 
 
 def get_relevant_baselines(task_name):
@@ -89,6 +90,7 @@ class TransformerModel(nn.Module):
             embd_pdrop=0.0,
             attn_pdrop=0.0,
             use_cache=False,
+            attn_implementation="sdpa",
         )
         self.name = f"gpt2_embd={n_embd}_layer={n_layer}_head={n_head}"
 
@@ -114,10 +116,12 @@ class TransformerModel(nn.Module):
         return zs
 
     def forward(self, xs, ys, inds=None):
+        if xs.device.type != "cuda" or ys.device.type != "cuda":
+            raise ValueError("Transformer inputs must be on a CUDA GPU")
         if inds is None:
-            inds = torch.arange(ys.shape[1])
+            inds = torch.arange(ys.shape[1], device=ys.device)
         else:
-            inds = torch.tensor(inds)
+            inds = torch.as_tensor(inds, device=ys.device)
             if max(inds) >= ys.shape[1] or min(inds) < 0:
                 raise ValueError("inds contain indices where xs and ys are not defined")
         zs = self._combine(xs, ys)
@@ -322,7 +326,8 @@ class GDModel:
         # prediction made at all indices by default.
         # xs: bsize X npoints X ndim.
         # ys: bsize X npoints.
-        xs, ys = xs.cuda(), ys.cuda()
+        device = resolve_device()
+        xs, ys = xs.to(device), ys.to(device)
 
         if inds is None:
             inds = range(ys.shape[1])
@@ -338,7 +343,7 @@ class GDModel:
             model = ParallelNetworks(
                 ys.shape[0], self.model_class, **self.model_class_args
             )
-            model.cuda()
+            model.to(device)
             if i > 0:
                 pred = torch.zeros_like(ys[:, 0])
 

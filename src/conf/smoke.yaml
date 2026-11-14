@@ -1,0 +1,17 @@
+inherit:
+    - toy.yaml
+
+device: cuda
+eval_after_train: false
+out_dir: ../models/smoke
+model:
+    n_embd: 16
+    n_layer: 1
+    n_head: 2
+training:
+    batch_size: 2
+    train_steps: 3
+    save_every_steps: 1
+wandb:
+    mode: disabled
+    name: smoke

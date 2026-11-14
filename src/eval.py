@@ -12,6 +12,7 @@ import yaml
 import models
 from samplers import get_data_sampler, sample_transformation
 from tasks import get_task_sampler
+from runtime import resolve_device
 
 
 def get_model_from_run(run_path, step=-1, only_conf=False):
@@ -25,11 +26,11 @@ def get_model_from_run(run_path, step=-1, only_conf=False):
 
     if step == -1:
         state_path = os.path.join(run_path, "state.pt")
-        state = torch.load(state_path)
+        state = torch.load(state_path, map_location="cpu", weights_only=True)
         model.load_state_dict(state["model_state_dict"])
     else:
         model_path = os.path.join(run_path, f"model_{step}.pt")
-        state_dict = torch.load(model_path)
+        state_dict = torch.load(model_path, map_location="cpu", weights_only=True)
         model.load_state_dict(state_dict)
 
     return model, conf
@@ -40,8 +41,8 @@ def get_model_from_run(run_path, step=-1, only_conf=False):
 
 def eval_batch(model, task_sampler, xs, xs_p=None):
     task = task_sampler()
-    if torch.cuda.is_available() and model.name.split("_")[0] in ["gpt2", "lstm"]:
-        device = "cuda"
+    if isinstance(model, torch.nn.Module):
+        device = next(model.parameters()).device
     else:
         device = "cpu"
 
@@ -290,12 +291,20 @@ def compute_evals(all_models, evaluation_kwargs, save_path=None, recompute=False
 def get_run_metrics(
     run_path, step=-1, cache=True, skip_model_load=False, skip_baselines=False
 ):
+    _, phase_conf = get_model_from_run(run_path, only_conf=True)
+    if phase_conf.training.task == "phase2_classification":
+        from phase2_eval import evaluate_run
+        if skip_model_load:
+            name = "phase2_metrics.json" if step == -1 else f"phase2_metrics_{step}.json"
+            with open(os.path.join(run_path, name), encoding="utf-8") as fp:
+                return json.load(fp)
+        return evaluate_run(run_path, step=step, cache=cache)
     if skip_model_load:
         _, conf = get_model_from_run(run_path, only_conf=True)
         all_models = []
     else:
         model, conf = get_model_from_run(run_path, step)
-        model = model.cuda().eval()
+        model = model.to(resolve_device()).eval()
         all_models = [model]
         if not skip_baselines:
             all_models += models.get_relevant_baselines(conf.training.task)

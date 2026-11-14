@@ -1,0 +1,9 @@
+# Separate train/eval distribution: r=0.9, same marginal N(0,I_d).
+inherit:
+    - phase2.yaml
+training:
+    data_kwargs:
+        rho: 0.9
+out_dir: ../models/phase2_markov_flip
+wandb:
+    name: phase2_tiny_markov0.9_flip_eta0.1

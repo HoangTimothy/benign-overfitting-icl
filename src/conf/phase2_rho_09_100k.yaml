@@ -1,0 +1,23 @@
+# Matched train/eval rho sweep; inherit the Phase II tiny model and protocol.
+inherit:
+    - phase2.yaml
+
+seed: 0
+eval_after_train: true
+out_dir: ../models/phase2_rho_09_100k
+
+training:
+    train_steps: 100000
+    task_kwargs:
+        corruption: flip
+        eta: 0.1
+        bias: 0.0
+    data_kwargs:
+        rho: 0.9
+
+phase2_eval:
+    seed: 1000003
+
+wandb:
+    mode: disabled
+    name: phase2_tiny_rho0.9_eta0.1_seed0_100k
