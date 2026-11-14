@@ -34,10 +34,13 @@ def sample_transformation(eigenvalues, normalize=False):
 
 
 class GaussianSampler(DataSampler):
-    def __init__(self, n_dims, bias=None, scale=None):
+    def __init__(self, n_dims, bias=None, scale=None, rho=0.0):
         super().__init__(n_dims)
         self.bias = bias
         self.scale = scale
+        if not 0 <= rho < 1:
+            raise ValueError("Markov rho must lie in [0, 1)")
+        self.rho = float(rho)
 
     def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
         if seeds is None:
@@ -49,6 +52,12 @@ class GaussianSampler(DataSampler):
             for i, seed in enumerate(seeds):
                 generator.manual_seed(seed)
                 xs_b[i] = torch.randn(n_points, self.n_dims, generator=generator)
+        if self.rho:
+            # Eq. (1): x_1 is already stationary N(0,I); subsequent independent
+            # innovations preserve each marginal and induce Cov=rho**lag I.
+            innovation_scale = math.sqrt(1 - self.rho ** 2)
+            for i in range(1, n_points):
+                xs_b[:, i] = self.rho * xs_b[:, i - 1] + innovation_scale * xs_b[:, i]
         if self.scale is not None:
             xs_b = xs_b @ self.scale
         if self.bias is not None:

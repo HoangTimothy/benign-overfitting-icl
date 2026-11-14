@@ -1,0 +1,49 @@
+# bo.pdf Phase II, Eqs. (7)-(13). Confirmed: Garg tiny, d=20, m=40,
+# 100000 updates. eta=0.1 and evaluation budget are configurable defaults.
+inherit:
+    - models/tiny.yaml
+    - wandb.yaml
+
+device: cuda
+seed: 0
+deterministic: true
+eval_after_train: true
+out_dir: ../models/phase2_iid_flip
+
+model:
+    n_dims: 20
+    n_positions: 41
+
+training:
+    task: phase2_classification
+    task_kwargs:
+        corruption: flip
+        eta: 0.1
+        bias: 0.0
+    data: gaussian
+    data_kwargs:
+        rho: 0.0
+    num_tasks: null
+    num_training_examples: null
+    batch_size: 64
+    learning_rate: 0.0001
+    train_steps: 100000
+    save_every_steps: 1000
+    keep_every_steps: 10000
+    curriculum:
+        dims: {start: 20, end: 20, inc: 0, interval: 1}
+        points: {start: 41, end: 41, inc: 0, interval: 1}
+
+wandb:
+    mode: disabled
+    name: phase2_tiny_iid_flip_eta0.1
+
+phase2_eval:
+    seed: 1000003
+    num_tasks: 1024
+    batch_size: 16
+    query_chunk_size: 4
+    leave_one_out: true
+    bayes_samples: 0
+    bayes_min_ess: 100.0
+    save_per_task: true

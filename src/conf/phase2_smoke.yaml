@@ -1,0 +1,14 @@
+inherit:
+    - phase2.yaml
+out_dir: ../models/phase2_smoke
+training:
+    batch_size: 2
+    train_steps: 3
+    save_every_steps: 1
+    keep_every_steps: -1
+phase2_eval:
+    num_tasks: 4
+    batch_size: 2
+    query_chunk_size: 2
+wandb:
+    name: phase2_smoke

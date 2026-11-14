@@ -291,6 +291,14 @@ def compute_evals(all_models, evaluation_kwargs, save_path=None, recompute=False
 def get_run_metrics(
     run_path, step=-1, cache=True, skip_model_load=False, skip_baselines=False
 ):
+    _, phase_conf = get_model_from_run(run_path, only_conf=True)
+    if phase_conf.training.task == "phase2_classification":
+        from phase2_eval import evaluate_run
+        if skip_model_load:
+            name = "phase2_metrics.json" if step == -1 else f"phase2_metrics_{step}.json"
+            with open(os.path.join(run_path, name), encoding="utf-8") as fp:
+                return json.load(fp)
+        return evaluate_run(run_path, step=step, cache=cache)
     if skip_model_load:
         _, conf = get_model_from_run(run_path, only_conf=True)
         all_models = []

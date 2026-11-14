@@ -1,4 +1,6 @@
 import os
+import json
+import math
 from random import randint
 import uuid
 
@@ -14,6 +16,7 @@ from samplers import get_data_sampler
 from curriculum import Curriculum
 from schema import schema
 from models import build_model
+from phase2 import validate_phase2_config
 from runtime import (
     resolve_device, configure_reproducibility, configure_backend, capture_rng_state,
     restore_rng_state, runtime_signature,
@@ -41,6 +44,7 @@ def sample_seeds(total_seeds, count):
 
 
 def train(model, args):
+    validate_phase2_config(args)
     device = next(model.parameters()).device
     resolve_device(device)
     configure_backend(args.deterministic)
@@ -62,6 +66,7 @@ def train(model, args):
         "training": {
             key: value for key, value in unmunchify(args.training).items()
             if key not in {"train_steps", "save_every_steps", "keep_every_steps", "resume_id"}
+            and not (key == "data_kwargs" and not value)
         },
     }
 
@@ -89,7 +94,7 @@ def train(model, args):
 
     n_dims = model.n_dims
     bsize = args.training.batch_size
-    data_sampler = get_data_sampler(args.training.data, n_dims=n_dims)
+    data_sampler = get_data_sampler(args.training.data, n_dims=n_dims, **(args.training.data_kwargs or {}))
     task_sampler = get_task_sampler(
         args.training.task,
         n_dims,
@@ -105,6 +110,25 @@ def train(model, args):
     pbar = tqdm(range(starting_step, args.training.train_steps))
 
     num_training_examples = args.training.num_training_examples
+    metrics_path = None
+    if args.training.task == "phase2_classification" and not args.test_run:
+        metrics_path = os.path.join(args.out_dir, "training_metrics.jsonl")
+        # An interrupted run may have logged updates after the latest saved
+        # checkpoint. Drop those stale rows before replaying the updates.
+        if os.path.exists(metrics_path):
+            rows = []
+            with open(metrics_path, encoding="utf-8") as fp:
+                for line in fp:
+                    try:
+                        row = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue  # a partially written last line after a crash
+                    if row["step"] < starting_step:
+                        rows.append(row)
+            with open(metrics_path + ".tmp", "w", encoding="utf-8") as fp:
+                for row in rows:
+                    fp.write(json.dumps(row, allow_nan=False) + "\n")
+            os.replace(metrics_path + ".tmp", metrics_path)
 
     for i in pbar:
         data_sampler_args = {}
@@ -143,9 +167,21 @@ def train(model, args):
             / curriculum.n_points
         )
 
-        if i % args.wandb.log_every_steps == 0 and not args.test_run:
-            wandb.log(
-                {
+        log_now = i % args.wandb.log_every_steps == 0 or (metrics_path is not None and i == args.training.train_steps - 1)
+        if log_now and not args.test_run:
+            if args.training.task == "phase2_classification":
+                log_metrics = {
+                    "meta_train_bce": loss,
+                    "meta_train_accuracy": 1 - point_wise_loss.mean().item(),
+                    "pointwise/error": dict(zip(point_wise_tags, point_wise_loss.cpu().tolist())),
+                    "n_points": curriculum.n_points,
+                    "n_dims": curriculum.n_dims_truncated,
+                }
+                if task.corruption == "flip":
+                    eta = task.eta
+                    log_metrics["noise_entropy_floor"] = -eta * math.log(eta) - (1 - eta) * math.log1p(-eta)
+            else:
+                log_metrics = {
                     "overall_loss": loss,
                     "excess_loss": loss / baseline_loss,
                     "pointwise/loss": dict(
@@ -153,9 +189,11 @@ def train(model, args):
                     ),
                     "n_points": curriculum.n_points,
                     "n_dims": curriculum.n_dims_truncated,
-                },
-                step=i,
-            )
+                }
+            if metrics_path is not None:
+                with open(metrics_path, "a", encoding="utf-8") as fp:
+                    fp.write(json.dumps({"step": i, **log_metrics}, allow_nan=False) + "\n")
+            wandb.log(log_metrics, step=i)
 
         curriculum.update()
 
@@ -166,6 +204,7 @@ def train(model, args):
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
                 "train_step": i,
+                "last_meta_train_loss": loss,
                 "curriculum_state": curriculum.state_dict(),
                 "task_pool_dict": task_sampler.pool_dict,
                 "rng_state": capture_rng_state(),
@@ -186,6 +225,7 @@ def train(model, args):
 
 
 def main(args):
+    validate_phase2_config(args)
     device = resolve_device(args.device)
     configure_reproducibility(args.seed, args.deterministic)
     if args.test_run:

@@ -1,0 +1,12 @@
+# Separate corruption model, Eq. (9); eta=null replaces inherited flip rate.
+inherit:
+    - phase2.yaml
+training:
+    task_kwargs:
+        corruption: probit
+        eta: null
+        noise_std: 1.0
+        bias: 0.0
+out_dir: ../models/phase2_iid_probit
+wandb:
+    name: phase2_tiny_iid_probit_sigma1

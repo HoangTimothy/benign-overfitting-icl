@@ -1,6 +1,7 @@
 import math
 
 import torch
+from phase2 import Phase2Classification
 
 
 def squared_error(ys_pred, ys):
@@ -53,6 +54,7 @@ def get_task_sampler(
     task_name, n_dims, batch_size, pool_dict=None, num_tasks=None, **kwargs
 ):
     task_names_to_classes = {
+        "phase2_classification": Phase2Classification,
         "linear_regression": LinearRegression,
         "sparse_linear_regression": SparseLinearRegression,
         "linear_classification": LinearClassification,

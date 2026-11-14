@@ -35,6 +35,7 @@ curriculum_schema = {
 }
 
 TASK_LIST = [
+    "phase2_classification",
     "linear_regression",
     "sparse_linear_regression",
     "linear_classification",
@@ -48,6 +49,7 @@ training_schema = {
     "num_tasks": merge(tinteger, nullable, default(None)),
     "num_training_examples": merge(tinteger, nullable, default(None)),
     "data": merge(tstring, allowed(["gaussian"])),
+    "data_kwargs": merge(tdict, nullable, default(None)),
     "batch_size": merge(tinteger, default(64)),
     "learning_rate": merge(tfloat, default(3e-4)),
     "train_steps": merge(tinteger, default(1000)),
@@ -71,6 +73,7 @@ schema = {
     "seed": merge(tinteger, default(0)),
     "deterministic": merge(tboolean, default(True)),
     "eval_after_train": merge(tboolean, default(True)),
+    "phase2_eval": merge(tdict, nullable, default(None)),
     "out_dir": merge(tstring, required),
     "model": stdict(model_schema),
     "training": stdict(training_schema),
